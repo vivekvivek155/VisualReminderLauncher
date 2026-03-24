@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -54,30 +55,22 @@ class SettingsActivity : ComponentActivity() {
         setContent {
             VisualReminderTheme {
                 val context = LocalContext.current
-                var startTimeState by remember { mutableStateOf(TimeManager.getStartTime(context)) }
-                var endTimeState by remember { mutableStateOf(TimeManager.getEndTime(context)) }
+                var schedules by remember { mutableStateOf(UserPreferences.getReminderSchedules(context)) }
                 var warningMessage by remember { mutableStateOf(UserPreferences.getWarningMessage(context)) }
                 var showMessageDialog by remember { mutableStateOf(false) }
+                var showAddScheduleDialog by remember { mutableStateOf(false) }
 
                 SettingsScreen(
-                    startTime = startTimeState,
-                    endTime = endTimeState,
+                    schedules = schedules,
                     warningMessage = warningMessage,
-                    onSetStartTime = { 
-                        pickTime(startTimeState.first, startTimeState.second) { h, m -> 
-                            TimeManager.saveStartTime(this, h, m)
-                            startTimeState = Pair(h, m)
-                        } 
+                    onAddSchedule = { showAddScheduleDialog = true },
+                    onDeleteSchedule = { schedule ->
+                        schedules = schedules.filter { it.id != schedule.id }
+                        UserPreferences.saveReminderSchedules(context, schedules)
                     },
-                    onSetEndTime = { 
-                        pickTime(endTimeState.first, endTimeState.second) { h, m -> 
-                            TimeManager.saveEndTime(this, h, m)
-                            endTimeState = Pair(h, m)
-                        } 
-                    },
-                    onConfirmTiming = {
-                        val durationText = calculateDuration(startTimeState, endTimeState)
-                        Toast.makeText(this, "Reminder is set for $durationText", Toast.LENGTH_LONG).show()
+                    onToggleSchedule = { schedule, enabled ->
+                        schedules = schedules.map { if (it.id == schedule.id) it.copy(enabled = enabled) else it }
+                        UserPreferences.saveReminderSchedules(context, schedules)
                     },
                     onSelectWallpaper = {
                         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -92,6 +85,25 @@ class SettingsActivity : ComponentActivity() {
                     onEditWarning = { showMessageDialog = true },
                     onBack = { finish() }
                 )
+
+                if (showAddScheduleDialog) {
+                    AddScheduleDialog(
+                        onDismiss = { showAddScheduleDialog = false },
+                        onSave = { startH, startM, endH, endM, daily ->
+                            val newSchedule = ReminderSchedule(
+                                startHour = startH, startMinute = startM,
+                                endHour = endH, endMinute = endM,
+                                repeatDaily = daily
+                            )
+                            schedules = schedules + newSchedule
+                            UserPreferences.saveReminderSchedules(context, schedules)
+                            showAddScheduleDialog = false
+                            
+                            val duration = calculateDuration(Pair(startH, startM), Pair(endH, endM))
+                            Toast.makeText(context, "Reminder set for $duration", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
 
                 if (showMessageDialog) {
                     var tempMessage by remember { mutableStateOf(warningMessage) }
@@ -125,28 +137,13 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    private fun pickTime(initialHour: Int, initialMinute: Int, callback: (Int, Int) -> Unit) {
-        TimePickerDialog(
-            this,
-            { _, hour, minute -> callback(hour, minute) },
-            initialHour,
-            initialMinute,
-            false 
-        ).show()
-    }
-
     private fun calculateDuration(start: Pair<Int, Int>, end: Pair<Int, Int>): String {
         var startMinutes = start.first * 60 + start.second
         var endMinutes = end.first * 60 + end.second
-        
-        if (endMinutes < startMinutes) {
-            endMinutes += 24 * 60 // Overnight
-        }
-        
+        if (endMinutes < startMinutes) endMinutes += 24 * 60
         val totalMinutes = endMinutes - startMinutes
         val hours = totalMinutes / 60
         val mins = totalMinutes % 60
-        
         return when {
             hours > 0 && mins > 0 -> "$hours hours $mins minutes"
             hours > 0 -> "$hours hours"
@@ -155,15 +152,53 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun AddScheduleDialog(onDismiss: () -> Unit, onSave: (Int, Int, Int, Int, Boolean) -> Unit) {
+    var startH by remember { mutableIntStateOf(20) }
+    var startM by remember { mutableIntStateOf(0) }
+    var endH by remember { mutableIntStateOf(22) }
+    var endM by remember { mutableIntStateOf(0) }
+    var repeatDaily by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New Schedule") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = {
+                    TimePickerDialog(context, { _, h, m -> startH = h; startM = m }, startH, startM, false).show()
+                }) {
+                    Text("Start Time: ${formatTime(startH, startM)}")
+                }
+                TextButton(onClick = {
+                    TimePickerDialog(context, { _, h, m -> endH = h; endM = m }, endH, endM, false).show()
+                }) {
+                    Text("End Time: ${formatTime(endH, endM)}")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = repeatDaily, onCheckedChange = { repeatDaily = it })
+                    Text("Repeat Daily")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(startH, startM, endH, endM, repeatDaily) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    startTime: Pair<Int, Int>,
-    endTime: Pair<Int, Int>,
+    schedules: List<ReminderSchedule>,
     warningMessage: String,
-    onSetStartTime: () -> Unit,
-    onSetEndTime: () -> Unit,
-    onConfirmTiming: () -> Unit,
+    onAddSchedule: () -> Unit,
+    onDeleteSchedule: (ReminderSchedule) -> Unit,
+    onToggleSchedule: (ReminderSchedule, Boolean) -> Unit,
     onSelectWallpaper: () -> Unit,
     onSelectApps: () -> Unit,
     onEditWarning: () -> Unit,
@@ -177,159 +212,109 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
+                }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onAddSchedule) {
+                Icon(Icons.Default.Add, contentDescription = "Add Schedule")
+            }
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SettingsSectionTitle("Reminder Schedule")
+            SettingsSectionTitle("Reminder Schedules")
             
-            SettingsCard {
-                Column {
-                    SettingsRow(
-                        icon = Icons.Default.Schedule,
-                        title = "Start Time",
-                        subtitle = formatTime(startTime.first, startTime.second),
-                        onClick = onSetStartTime
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.Gray.copy(alpha = 0.2f))
-                    SettingsRow(
-                        icon = Icons.Default.TimerOff,
-                        title = "End Time",
-                        subtitle = formatTime(endTime.first, endTime.second),
-                        onClick = onSetEndTime
-                    )
-                    
-                    Button(
-                        onClick = onConfirmTiming,
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Confirm Timing")
-                    }
-                }
+            if (schedules.isEmpty()) {
+                Text("No schedules set. Tap + to add one.", color = Color.Gray, modifier = Modifier.padding(8.dp))
+            }
+
+            schedules.forEach { schedule ->
+                ScheduleCard(schedule, onDeleteSchedule, onToggleSchedule)
             }
 
             SettingsSectionTitle("Personalization")
-            
             SettingsCard {
                 Column {
-                    SettingsRow(
-                        icon = Icons.Default.Wallpaper,
-                        title = "Change Wallpaper",
-                        subtitle = "Select a custom background image",
-                        onClick = onSelectWallpaper
-                    )
+                    SettingsRow(Icons.Default.Wallpaper, "Change Wallpaper", "Custom background", onSelectWallpaper)
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.Gray.copy(alpha = 0.2f))
-                    SettingsRow(
-                        icon = Icons.Default.EditNote,
-                        title = "Reminder Message",
-                        subtitle = warningMessage.replace("%s", "App"),
-                        onClick = onEditWarning
-                    )
+                    SettingsRow(Icons.Default.EditNote, "Reminder Message", warningMessage.replace("%s", "App"), onEditWarning)
                 }
             }
 
             SettingsSectionTitle("App Control")
-            
             SettingsCard {
-                SettingsRow(
-                    icon = Icons.Default.AppRegistration,
-                    title = "Restricted Apps",
-                    subtitle = "Select apps to restrict during reminder",
-                    onClick = onSelectApps
+                SettingsRow(Icons.Default.AppRegistration, "Restricted Apps", "Select apps to restrict", onSelectApps)
+            }
+        }
+    }
+}
+
+@Composable
+fun ScheduleCard(
+    schedule: ReminderSchedule,
+    onDelete: (ReminderSchedule) -> Unit,
+    onToggle: (ReminderSchedule, Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${formatTime(schedule.startHour, schedule.startMinute)} - ${formatTime(schedule.endHour, schedule.endMinute)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (schedule.repeatDaily) "Repeats Daily" else "Once",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray
                 )
             }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text(
-                text = "Visual Reminder Launcher v1.0",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
+            Switch(checked = schedule.enabled, onCheckedChange = { onToggle(schedule, it) })
+            IconButton(onClick = { onDelete(schedule) }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
 
 @Composable
 fun SettingsSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
-    )
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
 }
 
 @Composable
 fun SettingsCard(content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))) {
         content()
     }
 }
 
 @Composable
-fun SettingsRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
+fun SettingsRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
         }
-        
         Spacer(modifier = Modifier.width(16.dp))
-        
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-            Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 1)
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 1)
         }
-        
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = Color.Gray.copy(alpha = 0.5f)
-        )
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.Gray.copy(alpha = 0.5f))
     }
 }
 

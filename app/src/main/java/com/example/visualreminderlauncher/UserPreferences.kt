@@ -9,6 +9,7 @@ object UserPreferences {
     private const val WALLPAPER_URI = "wallpaper_uri"
     private const val APP_ORDER = "app_order"
     private const val WARNING_MESSAGE = "warning_message"
+    private const val REMINDER_SCHEDULES = "reminder_schedules"
 
     fun saveSelectedApps(context: Context, apps: Set<String>) {
         val pref = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -49,5 +50,16 @@ object UserPreferences {
     fun getWarningMessage(context: Context): String {
         val pref = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
         return pref.getString(WARNING_MESSAGE, "Do you really need to open %s?") ?: "Do you really need to open %s?"
+    }
+
+    fun saveReminderSchedules(context: Context, schedules: List<ReminderSchedule>) {
+        val pref = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        pref.edit().putString(REMINDER_SCHEDULES, ReminderSchedule.toJsonArray(schedules)).apply()
+    }
+
+    fun getReminderSchedules(context: Context): List<ReminderSchedule> {
+        val pref = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        val json = pref.getString(REMINDER_SCHEDULES, null)
+        return if (json != null) ReminderSchedule.fromJsonArray(json) else emptyList()
     }
 }

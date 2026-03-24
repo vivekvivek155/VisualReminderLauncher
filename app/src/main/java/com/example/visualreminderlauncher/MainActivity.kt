@@ -24,6 +24,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -166,9 +167,24 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
-                        // 2. STATUS BAR AREA / REMINDER INDICATOR
+                        // 2. STATUS BAR AREA / REMINDER INDICATOR / REORDER BANNER
                         Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 20.dp), contentAlignment = Alignment.CenterStart) {
-                            if (reminderActive) {
+                            if (movingAppIndex != null) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "● REORDER MODE: Select target spot",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                                        color = Color.Cyan
+                                    )
+                                    IconButton(onClick = { movingAppIndex = null }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            } else if (reminderActive) {
                                 Text(
                                     text = "● REMINDER MODE ACTIVE",
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
@@ -179,7 +195,7 @@ class MainActivity : ComponentActivity() {
 
                         // 3. CLOCK & DATE WIDGET
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 10.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -206,7 +222,7 @@ class MainActivity : ComponentActivity() {
 
                         // 4. PROFESSIONAL SEARCH BAR
                         Surface(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp).height(54.dp).clickable {
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp).height(54.dp).clickable {
                                 startActivity(Intent(Intent.ACTION_WEB_SEARCH))
                             },
                             shape = RoundedCornerShape(27.dp),
@@ -224,7 +240,7 @@ class MainActivity : ComponentActivity() {
                         // 5. MAIN APP AREA (Pager)
                         val dockSize = 4
                         val pagedApps = allApps.drop(dockSize)
-                        val itemsPerPage = 16 // 4x4 for better spacing
+                        val itemsPerPage = 16 // 4x4
                         val pagerState = rememberPagerState(pageCount = { (pagedApps.size + itemsPerPage - 1) / itemsPerPage })
 
                         HorizontalPager(
@@ -239,9 +255,10 @@ class MainActivity : ComponentActivity() {
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(4),
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(top = 16.dp),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                userScrollEnabled = false 
                             ) {
                                 itemsIndexed(appsOnPage) { idx, app ->
                                     val currentIdx = dockSize + startIdx + idx
@@ -251,18 +268,25 @@ class MainActivity : ComponentActivity() {
                                         shouldApplyReminder = reminderActive && selectedApps.contains(app.packageName),
                                         isDock = false,
                                         onClick = {
-                                            handleAppClick(
-                                                context = context,
-                                                app = app,
-                                                reminderActive = reminderActive,
-                                                selectedApps = selectedApps,
-                                                lastClickedPackageName = lastClickedPackageName,
-                                                movingAppIndex = movingAppIndex,
-                                                currentIdx = currentIdx,
-                                                allApps = allApps,
-                                                onStateUpdate = { lastClickedPackageName = it },
-                                                onShowReminder = { showReminderDialog = it }
-                                            )
+                                            if (movingAppIndex != null) {
+                                                if (movingAppIndex != currentIdx) {
+                                                    val from = movingAppIndex!!
+                                                    val item = allApps.removeAt(from)
+                                                    allApps.add(currentIdx, item)
+                                                    UserPreferences.saveAppOrder(context, allApps.map { it.packageName })
+                                                }
+                                                movingAppIndex = null
+                                            } else {
+                                                handleAppClick(
+                                                    context = context,
+                                                    app = app,
+                                                    reminderActive = reminderActive,
+                                                    selectedApps = selectedApps,
+                                                    lastClickedPackageName = lastClickedPackageName,
+                                                    onStateUpdate = { lastClickedPackageName = it },
+                                                    onShowReminder = { showReminderDialog = it }
+                                                )
+                                            }
                                         },
                                         onLongClick = {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -295,18 +319,25 @@ class MainActivity : ComponentActivity() {
                                         shouldApplyReminder = reminderActive && selectedApps.contains(app.packageName),
                                         isDock = true,
                                         onClick = {
-                                            handleAppClick(
-                                                context = context,
-                                                app = app,
-                                                reminderActive = reminderActive,
-                                                selectedApps = selectedApps,
-                                                lastClickedPackageName = lastClickedPackageName,
-                                                movingAppIndex = movingAppIndex,
-                                                currentIdx = idx,
-                                                allApps = allApps,
-                                                onStateUpdate = { lastClickedPackageName = it },
-                                                onShowReminder = { showReminderDialog = it }
-                                            )
+                                            if (movingAppIndex != null) {
+                                                if (movingAppIndex != idx) {
+                                                    val from = movingAppIndex!!
+                                                    val item = allApps.removeAt(from)
+                                                    allApps.add(idx, item)
+                                                    UserPreferences.saveAppOrder(context, allApps.map { it.packageName })
+                                                }
+                                                movingAppIndex = null
+                                            } else {
+                                                handleAppClick(
+                                                    context = context,
+                                                    app = app,
+                                                    reminderActive = reminderActive,
+                                                    selectedApps = selectedApps,
+                                                    lastClickedPackageName = lastClickedPackageName,
+                                                    onStateUpdate = { lastClickedPackageName = it },
+                                                    onShowReminder = { showReminderDialog = it }
+                                                )
+                                            }
                                         },
                                         onLongClick = {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -318,7 +349,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Custom Reminder Dialog for longer duration
+                    // Custom Reminder Dialog
                     if (showReminderDialog != null) {
                         Dialog(
                             onDismissRequest = { showReminderDialog = null },
@@ -353,35 +384,24 @@ class MainActivity : ComponentActivity() {
         reminderActive: Boolean,
         selectedApps: Set<String>,
         lastClickedPackageName: String?,
-        movingAppIndex: Int?,
-        currentIdx: Int,
-        allApps: MutableList<AppInfo>,
         onStateUpdate: (String?) -> Unit,
         onShowReminder: (String) -> Unit
     ) {
-        if (movingAppIndex != null) {
-            val from = movingAppIndex
-            val item = allApps.removeAt(from)
-            allApps.add(currentIdx, item)
-            UserPreferences.saveAppOrder(context, allApps.map { it.packageName })
-            onStateUpdate(null)
+        if (app.packageName == "com.vr.settings") {
+            startActivity(Intent(context, SettingsActivity::class.java))
         } else {
-            if (app.packageName == "com.vr.settings") {
-                startActivity(Intent(context, SettingsActivity::class.java))
-            } else {
-                val isSelectedApp = selectedApps.contains(app.packageName)
-                if (reminderActive && isSelectedApp) {
-                    if (lastClickedPackageName == app.packageName) {
-                        launchApp(context, app.packageName)
-                        onStateUpdate(null)
-                    } else {
-                        onShowReminder(app.name)
-                        onStateUpdate(app.packageName)
-                    }
-                } else {
+            val isSelectedApp = selectedApps.contains(app.packageName)
+            if (reminderActive && isSelectedApp) {
+                if (lastClickedPackageName == app.packageName) {
                     launchApp(context, app.packageName)
                     onStateUpdate(null)
+                } else {
+                    onShowReminder(app.name)
+                    onStateUpdate(app.packageName)
                 }
+            } else {
+                launchApp(context, app.packageName)
+                onStateUpdate(null)
             }
         }
     }
@@ -407,7 +427,7 @@ class MainActivity : ComponentActivity() {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .width(if (isDock) 75.dp else 85.dp)
-                .padding(vertical = 8.dp)
+                .padding(vertical = 4.dp)
                 .graphicsLayer {
                     if (isMoving) {
                         scaleX = 1.3f
@@ -418,7 +438,7 @@ class MainActivity : ComponentActivity() {
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                val iconSize = if (isDock) 54.dp else 56.dp
+                val iconSize = if (isDock) 54.dp else 52.dp
                 if (app.packageName == "com.vr.settings") {
                     Box(
                         modifier = Modifier.size(iconSize).clip(CircleShape).background(Color(0xFF333333)).shadow(4.dp, CircleShape),
@@ -454,7 +474,7 @@ class MainActivity : ComponentActivity() {
                     maxLines = 1,
                     color = Color.White,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 6.dp).padding(horizontal = 4.dp).fillMaxWidth()
+                    modifier = Modifier.padding(top = 4.dp).padding(horizontal = 4.dp).fillMaxWidth()
                 )
             }
         }
