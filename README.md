@@ -1,3 +1,8 @@
+Project Philosophy:
+Remind, Don't Restrict.
+Visual Reminder believes productivity should come from awareness, not forced limitations. Users always remain in control of their device while receiving meaningful visual reminders to stay focused.
+
+
 Visual Reminder 📱🎯
 Overview:
 Visual Reminder is an innovative Android launcher designed to help users stay focused without relying on sounds or intrusive notifications. Instead of alarms, the launcher uses animated wallpapers and dynamic app icon changes as gentle visual reminders.
@@ -41,11 +46,6 @@ Social media apps display a block-style icon as a visual cue.
 If the student taps Instagram, a reminder dialog asks if they really want to open it.
 Tapping the app again opens it normally.
 The launcher encourages mindful decisions rather than forcing restrictions.
-
-
-Project Philosophy:
-Remind, Don't Restrict.
-Visual Reminder believes productivity should come from awareness, not forced limitations. Users always remain in control of their device while receiving meaningful visual reminders to stay focused.
 
 
 Future Enhancements
